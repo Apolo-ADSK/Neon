@@ -13,6 +13,15 @@ import warp as wp
 import neon
 
 
+def _data_view_ordinal(dv) -> int:
+    """
+    DataView.data_view has been observed as either a single-character string
+    or a plain int depending on the installed neon build; normalize to int
+    so kernel-name construction doesn't break across builds.
+    """
+    return ord(dv) if isinstance(dv, str) else int(dv)
+
+
 class Container:
     # define an enum class
     class ContainerRuntime(Enum):
@@ -274,7 +283,6 @@ class Container:
         compute_lambda = loader._retrieve_compute_lambda()
 
         if container_runtime == Container.ContainerRuntime.warp:
-            @wp.kernel
             def kernel():
                 x, y, z = wp.tid()
                 # wp.printf("WARP my kernel - tid: %d %d %d\n", x, y, z)
@@ -283,10 +291,13 @@ class Container:
                 # wp.neon_print(myIdx)
                 compute_lambda(myIdx)
 
+            kernel.__name__ = f"{self.name}_warp_dv{_data_view_ordinal(data_view.data_view)}"
+            kernel.__qualname__ = kernel.__name__
+            kernel = wp.kernel(module="unique", enable_backward=False)(kernel)
+
             return kernel
 
         elif container_runtime == Container.ContainerRuntime.neon:
-            @wp.kernel
             def kernel():
                 is_active = wp.bool(False)
                 myIdx = wp.neon_set(span, is_active)
@@ -294,6 +305,10 @@ class Container:
                     # print("NEON-RUNTIME kernel - myIdx: ")
                     # wp.neon_print(myIdx)
                     compute_lambda(myIdx)
+
+            kernel.__name__ = f"{self.name}_neon_dv{_data_view_ordinal(data_view.data_view)}"
+            kernel.__qualname__ = kernel.__name__
+            kernel = wp.kernel(module="unique", enable_backward=False)(kernel)
 
             return kernel
 
@@ -319,7 +334,6 @@ class Container:
         compute_lambda = loader._retrieve_compute_lambda()
 
         if container_runtime == Container.ContainerRuntime.warp:
-            @wp.kernel
             def kernel():
                 x, y, z = wp.tid()
                 # wp.printf("WARP my kernel - tid: %d %d %d\n", x, y, z)
@@ -328,10 +342,13 @@ class Container:
                 # wp.neon_print(myIdx)
                 compute_lambda(myIdx)
 
+            kernel.__name__ = f"{self.name}_L{grid_level}_warp_dv{_data_view_ordinal(data_view.data_view)}"
+            kernel.__qualname__ = kernel.__name__
+            kernel = wp.kernel(module="unique", enable_backward=False)(kernel)
+
             return kernel
 
         elif container_runtime == Container.ContainerRuntime.neon:
-            @wp.kernel
             def kernel():
                 is_active = wp.bool(False)
                 myIdx = wp.neon_set(span, is_active)
@@ -339,6 +356,10 @@ class Container:
                     # print("NEON-RUNTIME kernel - myIdx: ")
                     # wp.neon_print(myIdx)
                     compute_lambda(myIdx)
+
+            kernel.__name__ = f"{self.name}_L{grid_level}_neon_dv{_data_view_ordinal(data_view.data_view)}"
+            kernel.__qualname__ = kernel.__name__
+            kernel = wp.kernel(module="unique", enable_backward=False)(kernel)
 
             return kernel
 
@@ -519,7 +540,7 @@ class Container:
                     out.append(f"def {loader_name}(loader: neon.Loader):")
                     for line in pre_lines:
                         out.append(f"    {line}")
-                    out.append("    @wp.kernel")
+                    out.append('    @wp.kernel(module="unique", enable_backward=False)')
                     out.append("    def kernel(")
                     for p in params:
                         out.append(f"        {p},")
